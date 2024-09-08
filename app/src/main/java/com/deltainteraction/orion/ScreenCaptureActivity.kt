@@ -9,6 +9,7 @@ import android.util.Log
 
 class ScreenCaptureActivity : Activity() {
 
+    private var TAG = "ScreenCaptureActivity"
     private lateinit var mediaProjectionManager: MediaProjectionManager
     private val REQUEST_MEDIA_PROJECTION = 1001
 
@@ -30,9 +31,9 @@ class ScreenCaptureActivity : Activity() {
             resultIntent.putExtra("data", data)
             sendBroadcast(resultIntent) // Send the broadcast
 
-            Log.d("ScreenCaptureActivity", "Broadcast sent with screen capture result.")
+            Log.d(TAG, "Broadcast sent with screen capture result.")
         } else {
-            Log.e("ScreenCaptureActivity", "Screen capture permission was not granted.")
+            Log.e(TAG, "Screen capture permission was not granted.")
         }
         finish() // Close the activity once the result is processed
     }

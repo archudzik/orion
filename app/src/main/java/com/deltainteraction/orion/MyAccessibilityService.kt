@@ -7,8 +7,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.PixelFormat
-import android.media.projection.MediaProjectionManager
-import android.os.Build
 import android.os.VibrationEffect
 import android.os.VibratorManager
 import android.util.Log
@@ -21,24 +19,37 @@ import android.widget.FrameLayout
 
 class MyAccessibilityService : AccessibilityService() {
 
+    private var TAG = "MyAccessibilityService"
     private var mLayout: FrameLayout? = null
-    private var mMediaProjectionManager: MediaProjectionManager? = null
 
     // BroadcastReceiver to handle the screen capture permission result
-    private val screenCaptureReceiver: BroadcastReceiver = object : BroadcastReceiver() {
+    private val genericBroadcastReceiver: BroadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            val actionIdent = intent?.action.toString()
             val resultCode = intent?.getIntExtra("resultCode", Activity.RESULT_CANCELED)
-            val data = intent?.getParcelableExtra<Intent>("data")
+            val data = intent?.getParcelableExtra("data", Intent::class.java)
+            val path = intent?.getParcelableExtra("path", String::class.java)
+            val actionResultIsOK = resultCode == Activity.RESULT_OK && data != null
 
-            if (resultCode == Activity.RESULT_OK && data != null) {
-                // Start the foreground service with the media projection data
-                val serviceIntent = Intent(this@MyAccessibilityService, ScreenCaptureForegroundService::class.java)
-                serviceIntent.putExtra("resultCode", resultCode)
-                serviceIntent.putExtra("data", data)
-                startForegroundService(serviceIntent)
-                Log.d("MyAccessibilityService", "Foreground service started.")
-            } else {
-                Log.e("MyAccessibilityService", "Screen capture permission was not granted.")
+            if (actionIdent == "com.deltainteraction.ACTION_FRESH_SCREENSHOT") {
+                Log.i(TAG, "ACTION_FRESH_SCREENSHOT")
+                Log.i(TAG, path!!)
+            }
+
+            if (actionIdent == "com.deltainteraction.ACTION_SCREEN_CAPTURE") {
+                if (actionResultIsOK) {
+                    // Start the foreground service with the media projection data
+                    val serviceIntent = Intent(
+                        this@MyAccessibilityService,
+                        ScreenCaptureForegroundService::class.java
+                    )
+                    serviceIntent.putExtra("resultCode", resultCode)
+                    serviceIntent.putExtra("data", data)
+                    startForegroundService(serviceIntent)
+                    Log.d(TAG, "Foreground service started.")
+                } else {
+                    Log.e(TAG, "Screen capture permission was not granted.")
+                }
             }
         }
     }
@@ -66,8 +77,16 @@ class MyAccessibilityService : AccessibilityService() {
         wm.addView(mLayout, lp)
 
         // Register the BroadcastReceiver to receive the result of screen capture permission
-        val filter = IntentFilter("com.deltainteraction.ACTION_SCREEN_CAPTURE")
-        registerReceiver(screenCaptureReceiver, filter, RECEIVER_EXPORTED)
+        registerReceiver(
+            genericBroadcastReceiver,
+            IntentFilter("com.deltainteraction.ACTION_SCREEN_CAPTURE"),
+            RECEIVER_EXPORTED
+        )
+        registerReceiver(
+            genericBroadcastReceiver,
+            IntentFilter("com.deltainteraction.ACTION_FRESH_SCREENSHOT"),
+            RECEIVER_EXPORTED
+        )
 
         // Bind onClickListener to the button (once layout is inflated)
         val actionBarScreenButton: Button? = mLayout?.findViewById(R.id.action_bar_button_screen)
@@ -87,13 +106,13 @@ class MyAccessibilityService : AccessibilityService() {
         val captureIntent = Intent(this, ScreenCaptureActivity::class.java)
         captureIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         startActivity(captureIntent)
-        Log.d("MyAccessibilityService", "Requesting screen capture permission...")
+        Log.d(TAG, "Requesting screen capture permission...")
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        unregisterReceiver(screenCaptureReceiver) // Unregister the receiver when the service is destroyed
-        Log.d("MyAccessibilityService", "MyAccessibilityService destroyed.")
+        unregisterReceiver(genericBroadcastReceiver) // Unregister the receiver when the service is destroyed
+        Log.d(TAG, "MyAccessibilityService destroyed.")
     }
 
     override fun onInterrupt() {}

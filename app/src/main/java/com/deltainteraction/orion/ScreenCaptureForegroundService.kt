@@ -6,21 +6,34 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
+import android.media.Image
 import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
-import android.os.Build
+import android.os.Environment
 import android.os.IBinder
 import android.util.DisplayMetrics
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContentProviderCompat.requireContext
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import java.io.OutputStream
 import java.nio.ByteBuffer
+import java.util.UUID
+
 
 class ScreenCaptureForegroundService : Service() {
+
+    private var TAG = "ScreenCaptureService"
+    private var channelId = "ScreenCaptureServiceChannel"
 
     private var mMediaProjection: MediaProjection? = null
     private var mVirtualDisplay: VirtualDisplay? = null
@@ -33,7 +46,8 @@ class ScreenCaptureForegroundService : Service() {
         super.onCreate()
 
         // Initialize MediaProjectionManager and DisplayMetrics
-        mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        mediaProjectionManager =
+            getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         displayMetrics = resources.displayMetrics
     }
 
@@ -43,11 +57,11 @@ class ScreenCaptureForegroundService : Service() {
 
         // Start the media projection if the data is available
         val resultCode = intent?.getIntExtra("resultCode", Activity.RESULT_CANCELED)
-        val data = intent?.getParcelableExtra<Intent>("data")
+        val data = intent?.getParcelableExtra("data", Intent::class.java)
         if (resultCode == Activity.RESULT_OK && data != null) {
             startMediaProjection(resultCode, data)
         } else {
-            Log.e("ScreenCaptureService", "Invalid media projection result or data.")
+            Log.d(TAG, "Invalid media projection result or data.")
         }
 
         return START_STICKY
@@ -56,60 +70,100 @@ class ScreenCaptureForegroundService : Service() {
     private fun startMediaProjection(resultCode: Int, data: Intent) {
         mMediaProjection = mediaProjectionManager.getMediaProjection(resultCode, data)
         if (mMediaProjection != null) {
-            Log.i("ScreenCaptureService", "MediaProjection started successfully")
+            Log.d(TAG, "Virtual display fresh set up.")
             setUpVirtualDisplay() // Set up the virtual display for screen capture
         } else {
-            Log.e("ScreenCaptureService", "Failed to start MediaProjection")
+            Log.e(TAG, "Failed to start MediaProjection")
             stopSelf() // Stop the service if MediaProjection fails
         }
     }
 
     private fun setUpVirtualDisplay() {
-        if (mVirtualDisplay == null && mMediaProjection != null) {
-            val width = displayMetrics.widthPixels
-            val height = displayMetrics.heightPixels
-            val density = displayMetrics.densityDpi
-
-            // Initialize ImageReader for screen capture
-            imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
-            val surface = imageReader?.surface
-
-            // Create the VirtualDisplay to capture the screen
-            mVirtualDisplay = mMediaProjection?.createVirtualDisplay(
-                "ScreenCapture",
-                width, height, density,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                surface, object : VirtualDisplay.Callback() {
-                    override fun onPaused() {
-                        Log.d("ScreenCaptureService", "VirtualDisplay paused.")
-                    }
-
-                    override fun onResumed() {
-                        Log.d("ScreenCaptureService", "VirtualDisplay resumed.")
-                    }
-
-                    override fun onStopped() {
-                        Log.d("ScreenCaptureService", "VirtualDisplay stopped.")
-                        releaseResources(true) // Release resources when the projection stops
-                    }
-                }, null
-            )
-
-            if (mVirtualDisplay != null) {
-                Log.d("ScreenCaptureService", "Virtual display set up successfully.")
-                captureScreenshot() // Optionally, capture a screenshot right after setup
-            } else {
-                Log.e("ScreenCaptureService", "Failed to set up VirtualDisplay.")
-                stopSelf()
-            }
+        if (mVirtualDisplay != null) {
+            return
         }
+        if (mMediaProjection == null) {
+            return
+        }
+        val width = displayMetrics.widthPixels
+        val height = displayMetrics.heightPixels
+        val density = displayMetrics.densityDpi
+
+        // Initialize ImageReader for screen capture
+        imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
+        imageReader!!.setOnImageAvailableListener({
+            if (imageReader != null) {
+                Log.i(TAG, "ImageReader - Image Available")
+                var newImage = imageReader!!.acquireLatestImage()
+                if (newImage !== null) {
+                    captureScreenshot(newImage) // Capture a screenshot right after
+                }
+            }
+            releaseResources(true)
+        }, null)
+
+        // Register MediaProjection callback
+        mMediaProjection!!.registerCallback(object : MediaProjection.Callback() {
+
+        }, null)
+
+        // Create the VirtualDisplay to capture the screen
+        mVirtualDisplay = mMediaProjection?.createVirtualDisplay(
+            "ScreenCapture",
+            width, height, density,
+            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+            imageReader?.surface,
+            object : VirtualDisplay.Callback() {
+
+                override fun onPaused() {
+                    Log.i(TAG, "VirtualDisplay paused.")
+                }
+
+                override fun onResumed() {
+                    Log.i(TAG, "VirtualDisplay resumed.")
+
+                }
+
+                override fun onStopped() {
+                    Log.i(TAG, "VirtualDisplay stopped.")
+                    releaseResources(true) // Release resources when the projection stops
+                }
+            }, null
+        )
     }
 
+    private fun saveBitmapToFile(bitmap: Bitmap, fileNameJpg: String): File? {
+        // Get the directory for saving the file
+        val directory =
+            Environment.getExternalStorageDirectory().absolutePath + "/Android/data/com.deltainteraction.orion/"
+        val dirFile = File(directory)
+
+        // Create the directory if it does not exist
+        if (!dirFile.exists()) {
+            dirFile.mkdirs()
+            dirFile.setWritable(true)
+        }
+
+        // Define the file object where the bitmap will be saved
+        val file = File(dirFile, fileNameJpg)
+        try {
+            val outStream = FileOutputStream(file)
+            // Compress the bitmap and save it in PNG format
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outStream)
+            outStream.flush()
+            outStream.close()
+            return file // Return the saved file
+        } catch (e: IOException) {
+            e.printStackTrace()
+        }
+        return null // Return null if saving fails
+    }
+
+
     // Capture the screenshot from the ImageReader
-    private fun captureScreenshot() {
-        val image = imageReader?.acquireLatestImage()
-        if (image != null) {
-            Log.d("ScreenCaptureService", "Capturing screenshot...")
+    private fun captureScreenshot(image: Image) {
+        try {
+            Log.i(TAG, "Capturing screenshot...")
 
             val planes = image.planes
             val buffer: ByteBuffer = planes[0].buffer
@@ -118,18 +172,27 @@ class ScreenCaptureForegroundService : Service() {
             val rowPadding: Int = rowStride - pixelStride * displayMetrics.widthPixels
 
             // Create a Bitmap from the captured image data (adjust row padding)
-            val bitmap = android.graphics.Bitmap.createBitmap(
+            val bitmap = Bitmap.createBitmap(
                 displayMetrics.widthPixels + rowPadding / pixelStride,
                 displayMetrics.heightPixels, android.graphics.Bitmap.Config.ARGB_8888
             )
             bitmap.copyPixelsFromBuffer(buffer)
 
             // Process the bitmap (e.g., save or analyze the image)
-            image.close()
+            val createdFile = saveBitmapToFile(bitmap, "orion_${UUID.randomUUID()}.jpg")
 
-            Log.d("ScreenCaptureService", "Screenshot captured successfully.")
-        } else {
-            Log.e("ScreenCaptureService", "Failed to acquire image from ImageReader.")
+            // Propagate
+            val resultIntent = Intent("com.deltainteraction.ACTION_FRESH_SCREENSHOT")
+            resultIntent.putExtra("resultCode", Activity.RESULT_OK)
+            resultIntent.putExtra("path", createdFile!!.absolutePath)
+            sendBroadcast(resultIntent) // Send the broadcast
+
+            // Close
+            image.close()
+            Log.i(TAG, "Screenshot captured successfully.")
+
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
@@ -140,17 +203,13 @@ class ScreenCaptureForegroundService : Service() {
     }
 
     private fun createNotification(): Notification {
-        val channelId = "ScreenCaptureServiceChannel"
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                channelId,
-                "Screen Capture Service",
-                NotificationManager.IMPORTANCE_DEFAULT
-            )
-            val notificationManager = getSystemService(NotificationManager::class.java)
-            notificationManager.createNotificationChannel(channel)
-        }
+        val channel = NotificationChannel(
+            channelId,
+            "Screen Capture Service",
+            NotificationManager.IMPORTANCE_DEFAULT
+        )
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        notificationManager.createNotificationChannel(channel)
 
         return NotificationCompat.Builder(this, channelId)
             .setContentTitle("Screen Capture Running")
@@ -165,13 +224,13 @@ class ScreenCaptureForegroundService : Service() {
 
     private fun releaseResources(stopSelf: Boolean) {
         // Clean up resources
-        Log.d("ScreenCaptureService", "Releasing resources...")
+        Log.i(TAG, "Releasing resources...")
         mVirtualDisplay?.release()
         imageReader?.close()
         mMediaProjection?.stop()
 
         // Optionally stop the service if screen capture is no longer needed
-        if(stopSelf) {
+        if (stopSelf) {
             stopSelf()
         }
     }
@@ -179,6 +238,6 @@ class ScreenCaptureForegroundService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         releaseResources(false)
-        Log.d("ScreenCaptureService", "ScreenCaptureForegroundService destroyed.")
+        Log.i(TAG, "ScreenCaptureForegroundService destroyed.")
     }
 }
