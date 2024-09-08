@@ -5,7 +5,7 @@
     <string name="title_activity_settings">Settings</string>
     <string name="title_activity_screen_capture">Screen Capture</string>
 
-    <string name="action_bar_screen">SHOT</string>
+    <string name="action_bar_screen">Read Screen</string>
 
     <!-- Preference Titles -->
     <string name="messages_header">Messages</string>

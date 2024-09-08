@@ -6,23 +6,46 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
 import android.os.VibrationEffect
 import android.os.VibratorManager
 import android.util.Log
 import android.view.Gravity
 import android.view.LayoutInflater
+import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.widget.Button
 import android.widget.FrameLayout
+import com.google.ai.client.generativeai.GenerativeModel
+import com.google.ai.client.generativeai.type.content
+import com.google.ai.client.generativeai.type.generationConfig
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+
 
 class MyAccessibilityService : AccessibilityService() {
 
     private var TAG = "MyAccessibilityService"
     private var mLayout: FrameLayout? = null
+    private var actionBarScreenButton: Button? = null
 
-    // BroadcastReceiver to handle the screen capture permission result
+    var generativeModel: GenerativeModel? = null
+    val generativeModelName = "gemini-1.5-flash-latest"
+    val generativeModelConfig = generationConfig {
+        temperature = 0.7f
+    }
+
+    var apiKey = BuildConfig.GEMINI_API_KEY
+    var promptLanguage = "PL"
+    val prompt = mapOf(
+        "PL" to "Jesteś asystentem AI, który pomaga osobie niewidomej. Twoje zadanie polega na odczytaniu zawartości ekranu, ekstrakcję kluczowych informacji, i poinformowania tej osoby o tym, co dzieje się na ekranie. Po Twojej analizie, aplikacja odczyta ją na głos. Bądź zwięzły. Zacznij od: 'Ekran pokazuje...'"
+    )
+
+    // BroadcastReceiver to handle the screen capture permission result and screenshot path
     private val genericBroadcastReceiver: BroadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val actionIdent = intent?.action.toString()
@@ -33,7 +56,12 @@ class MyAccessibilityService : AccessibilityService() {
 
             if (actionIdent == "com.deltainteraction.ACTION_FRESH_SCREENSHOT") {
                 Log.i(TAG, "ACTION_FRESH_SCREENSHOT")
-                Log.i(TAG, path!!)
+                actionBarScreenButton?.visibility = View.VISIBLE
+                if (path != null) {
+                    GlobalScope.launch {
+                        chatWithGemini(path)
+                    }
+                }
             }
 
             if (actionIdent == "com.deltainteraction.ACTION_SCREEN_CAPTURE") {
@@ -51,6 +79,26 @@ class MyAccessibilityService : AccessibilityService() {
                     Log.e(TAG, "Screen capture permission was not granted.")
                 }
             }
+        }
+    }
+
+    suspend fun chatWithGemini(imagePath: String) {
+        try {
+            val inputContent = content {
+                image(BitmapFactory.decodeFile(imagePath))
+                text(prompt[promptLanguage].toString())
+            }
+
+            var outputContent = ""
+
+            generativeModel?.generateContentStream(inputContent)?.collect { response ->
+                outputContent += response.text
+            }
+
+            Log.i(TAG, outputContent)
+
+        } catch (e: Exception) {
+            Log.e(TAG, e.localizedMessage)
         }
     }
 
@@ -88,9 +136,32 @@ class MyAccessibilityService : AccessibilityService() {
             RECEIVER_EXPORTED
         )
 
+        // Create LLM Client
+        generativeModel = GenerativeModel(
+            modelName = generativeModelName,
+            apiKey = apiKey,
+            generationConfig = generativeModelConfig
+        )
+
         // Bind onClickListener to the button (once layout is inflated)
-        val actionBarScreenButton: Button? = mLayout?.findViewById(R.id.action_bar_button_screen)
+        actionBarScreenButton = mLayout?.findViewById(R.id.action_bar_button_screen)
+        // Create gradient drawable programmatically
+        val gradient = GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,  // Set the gradient direction
+            intArrayOf(Color.parseColor("#7550e1"), Color.parseColor("#748ded"))  // Colors
+        )
+        gradient.cornerRadius = 75f
+        actionBarScreenButton?.setTextColor(Color.parseColor("#FFFFFF"))
+
+        actionBarScreenButton?.apply {
+            background = gradient
+            alpha = 0.9f  // Opacity level between 0.0 and 1.0
+            text = "Read\nScreen"
+            textSize = 20f
+        }
+
         actionBarScreenButton?.setOnClickListener {
+            actionBarScreenButton?.visibility = View.GONE
             vibrate(VibrationEffect.EFFECT_CLICK)
             requestScreenCapture() // Re-trigger screen capture permission if needed
         }

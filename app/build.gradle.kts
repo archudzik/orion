@@ -13,7 +13,6 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
@@ -21,7 +20,12 @@ android {
     }
 
     buildTypes {
+        debug{
+            buildConfigField("String", "GEMINI_API_KEY", System.getenv("GEMINI_API_KEY"))
+        }
         release {
+            buildConfigField("String", "GEMINI_API_KEY", System.getenv("GEMINI_API_KEY"))
+
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -38,6 +42,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.1"

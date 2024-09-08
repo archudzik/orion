@@ -9,11 +9,13 @@
         android:id="@+id/action_bar_button_screen"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="@string/action_bar_screen"
-        android:paddingTop="40dp"
-        android:paddingRight="30dp"
-        android:paddingBottom="40dp"
+
         android:paddingLeft="30dp"
-        />
+        android:paddingRight="30dp"
+
+        android:paddingTop="35dp"
+        android:paddingBottom="35dp"
+
+        android:text="@string/action_bar_screen" />
 
 </LinearLayout>
