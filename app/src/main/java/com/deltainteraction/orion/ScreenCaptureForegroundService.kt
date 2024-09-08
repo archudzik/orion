@@ -132,6 +132,28 @@ class ScreenCaptureForegroundService : Service() {
         )
     }
 
+    private fun resizeBitmap(bitmap: Bitmap, maxSize: Int): Bitmap {
+        val width = bitmap.width
+        val height = bitmap.height
+
+        // Determine the scale factor
+        val aspectRatio: Float = if (width > height) {
+            width.toFloat() / maxSize
+        } else {
+            height.toFloat() / maxSize
+        }
+
+        // Calculate new dimensions based on the aspect ratio
+        val newWidth = (width / aspectRatio).toInt()
+        val newHeight = (height / aspectRatio).toInt()
+
+        // Log difference
+        Log.i(TAG, "Resize: ${width} x ${height} => ${newWidth} x ${newHeight}")
+
+        // Resize the bitmap
+        return Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+    }
+
     private fun saveBitmapToFile(bitmap: Bitmap, fileNameJpg: String): File? {
         // Get the directory for saving the file
         val directory =
@@ -147,9 +169,11 @@ class ScreenCaptureForegroundService : Service() {
         // Define the file object where the bitmap will be saved
         val file = File(dirFile, fileNameJpg)
         try {
-            val outStream = FileOutputStream(file)
+            // Resize bitmap
+            val resizedBitmap = resizeBitmap(bitmap, 1920)
             // Compress the bitmap and save it in PNG format
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outStream)
+            val outStream = FileOutputStream(file)
+            resizedBitmap.compress(Bitmap.CompressFormat.JPEG, 100, outStream)
             outStream.flush()
             outStream.close()
             return file // Return the saved file
