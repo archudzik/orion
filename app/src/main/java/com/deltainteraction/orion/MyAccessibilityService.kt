@@ -32,6 +32,7 @@ import com.google.ai.client.generativeai.type.content
 import com.google.ai.client.generativeai.type.generationConfig
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.Locale
 
 
@@ -66,6 +67,9 @@ class MyAccessibilityService : AccessibilityService() {
 
     // TTS Service
     lateinit var textToSpeech: TextToSpeech
+
+    // Vibrations
+    lateinit var vibratorManager: VibratorManager
 
     // Touch events
     var autoConfirmRecording: Boolean = false
@@ -123,6 +127,8 @@ class MyAccessibilityService : AccessibilityService() {
         try {
             appStrings[appLanguage]?.get("processing")?.let { speakToUser(it) }
 
+            vibrate(VibrationEffect.EFFECT_TICK)
+
             val inputContent = content {
                 image(BitmapFactory.decodeFile(imagePath))
                 text(appStrings[appLanguage]?.get("prompt_read").toString())
@@ -131,10 +137,20 @@ class MyAccessibilityService : AccessibilityService() {
             var outputContent = ""
 
             generativeModel?.generateContentStream(inputContent)?.collect { response ->
+                vibrate(VibrationEffect.EFFECT_TICK)
                 outputContent += response.text
             }
 
+            var imageFile = File(imagePath)
+            try {
+                imageFile.delete()
+                Log.i(TAG, "File removed: ${imagePath}")
+            } catch (fe: Exception) {
+                Log.d(TAG, fe.toString())
+            }
+
             Log.i(TAG, outputContent)
+            vibrate(VibrationEffect.EFFECT_HEAVY_CLICK)
             speakToUser(outputContent)
 
         } catch (e: Exception) {
@@ -143,6 +159,9 @@ class MyAccessibilityService : AccessibilityService() {
     }
 
     override fun onServiceConnected() {
+        // Vibrator
+        vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+
         // Set up language and settings
         val preferences = PreferenceManager.getDefaultSharedPreferences(this)
         val newLang = preferences.getString("pref_orion_language", "en").toString()
@@ -212,11 +231,15 @@ class MyAccessibilityService : AccessibilityService() {
                 for (voice in voiceList) {
                     if (voice.locale.toString().equals(desiredVoice)) {
                         textToSpeech.setVoice(voice)
-                        textToSpeech.setSpeechRate(newTtsSpeed)
                     }
                 }
 
-                Log.d(TAG, "TextToSpeech Initialization Success")
+                textToSpeech.setSpeechRate(newTtsSpeed)
+
+                Log.i(
+                    TAG,
+                    "TextToSpeech Initialization Success: ${appLanguage}, ${desiredVoice}, ${newTtsSpeed}"
+                )
             } else {
                 Log.d(TAG, "TextToSpeech Initialization Failed")
             }
@@ -224,12 +247,13 @@ class MyAccessibilityService : AccessibilityService() {
 
         // Bind onClickListener to the button (once layout is inflated)
         actionBarScreenButton = mLayout?.findViewById(R.id.action_bar_button_screen)
+
         // Create gradient drawable programmatically
         val gradient = GradientDrawable(
             GradientDrawable.Orientation.TL_BR,  // Set the gradient direction
             intArrayOf(Color.parseColor("#7550e1"), Color.parseColor("#748ded"))  // Colors
         )
-        gradient.cornerRadius = 75f
+        gradient.cornerRadii = floatArrayOf(75f, 75f, 0f, 0f, 0f, 0f, 75f, 75f)
         actionBarScreenButton?.setTextColor(Color.parseColor("#FFFFFF"))
 
         actionBarScreenButton?.apply {
@@ -240,14 +264,20 @@ class MyAccessibilityService : AccessibilityService() {
         }
 
         actionBarScreenButton?.setOnClickListener {
-            actionBarScreenButton?.visibility = View.GONE
-            vibrate(VibrationEffect.EFFECT_CLICK)
-            requestScreenCapture() // Re-trigger screen capture permission if needed
+            if (textToSpeech.isSpeaking) {
+                textToSpeech.stop()
+                vibrate(VibrationEffect.EFFECT_DOUBLE_CLICK)
+            } else {
+                actionBarScreenButton?.visibility = View.GONE
+                vibrate(VibrationEffect.EFFECT_HEAVY_CLICK)
+                requestScreenCapture() // Re-trigger screen capture permission if needed
+            }
         }
+
+        vibrate(VibrationEffect.EFFECT_DOUBLE_CLICK)
     }
 
     private fun vibrate(effectId: Int) {
-        val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
         vibratorManager.defaultVibrator.vibrate(VibrationEffect.createPredefined(effectId))
     }
 
@@ -277,22 +307,25 @@ class MyAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        Log.i(TAG, event.toString())
         var source = event!!.source
-        if (event != null && source != null && event!!.eventType === AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+        if (event != null
+            && source != null
+            && event!!.eventType === AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+        ) {
             if (source.getPackageName().equals("com.android.systemui")) {
+
                 val confirm =
                     getRootInActiveWindow()
-                        .findAccessibilityNodeInfosByText("casting with Orion?")
-                Log.i(TAG, confirm.toString())
-                if (confirm.size !== 0) {
+                        .findAccessibilityNodeInfosByText("Orion?")
+
+                if (confirm.size !== 0 && autoConfirmRecording) {
                     val x = (getScreenWidth() - 200).toFloat()
                     val y = (getScreenHeight() - 120).toFloat()
+
                     Log.i(TAG, "X:${x}, Y:${y}")
-                    if (autoConfirmRecording) {
-                        touchTo(x, y)
-                    }
+                    touchTo(x, y)
                 }
+
             }
         }
     }
