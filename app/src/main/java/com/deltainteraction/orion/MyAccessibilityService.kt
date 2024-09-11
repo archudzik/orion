@@ -28,11 +28,16 @@ import android.widget.Button
 import android.widget.FrameLayout
 import androidx.preference.PreferenceManager
 import com.google.ai.client.generativeai.GenerativeModel
+import com.google.ai.client.generativeai.type.BlockThreshold
+import com.google.ai.client.generativeai.type.HarmCategory
+import com.google.ai.client.generativeai.type.SafetySetting
 import com.google.ai.client.generativeai.type.content
 import com.google.ai.client.generativeai.type.generationConfig
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import java.io.File
+import java.nio.file.attribute.AclEntry.newBuilder
+import java.util.Arrays
 import java.util.Locale
 
 
@@ -42,12 +47,15 @@ class MyAccessibilityService : AccessibilityService() {
     private var mLayout: FrameLayout? = null
     private var actionBarScreenButton: Button? = null
 
-    var apiKey = BuildConfig.GEMINI_API_KEY
-    var generativeModel: GenerativeModel? = null
-    val generativeModelName = "gemini-1.5-flash-latest"
-    val generativeModelConfig = generationConfig {
-        temperature = 0.7f
+    private var apiKey = BuildConfig.GEMINI_API_KEY
+    private var generativeModel: GenerativeModel? = null
+    private val generativeModelName = "gemini-1.5-flash-latest"
+    private val generativeModelConfig = generationConfig {
+        temperature = 0.9f
     }
+    private val safetySettings: List<SafetySetting> = Arrays.asList(
+        SafetySetting(HarmCategory.DANGEROUS_CONTENT, BlockThreshold.NONE),
+    )
 
     private var appLanguage = "PL"
     private val appStrings = mapOf(
@@ -55,13 +63,15 @@ class MyAccessibilityService : AccessibilityService() {
             "tts_voice" to "pol_POL_default",
             "prompt_read" to "Jesteś asystentem AI, który pomaga osobie niewidomej. Twoje zadanie polega na odczytaniu zawartości ekranu, ekstrakcję kluczowych informacji, i poinformowania tej osoby o tym, co dzieje się na ekranie. Po Twojej analizie, aplikacja odczyta ją na głos. Bądź zwięzły. Zacznij od: 'Ekran pokazuje...'",
             "read_screen" to "Odczyt\nEkranu",
-            "processing" to "Odczytuję..."
+            "processing" to "Chwileczkę...",
+            "something_went_wrong" to "Coś poszło nie tak, spróbuj ponownie"
         ),
         "EN" to mapOf(
             "tts_voice" to "eng_GBR_default",
             "prompt_read" to "You are an AI assistant helping a blind person. Your task is to read the screen's content, extract key information, and inform the person about what is happening on the screen. After your analysis, the application will read it out loud. Be concise. Start with: 'The screen shows...'",
             "read_screen" to "Read\nScreen",
-            "processing" to "Reading..."
+            "processing" to "One moment...",
+            "something_went_wrong" to "Something went wrong, try again"
         )
     )
 
@@ -141,12 +151,13 @@ class MyAccessibilityService : AccessibilityService() {
                 outputContent += response.text
             }
 
+
             var imageFile = File(imagePath)
             try {
                 imageFile.delete()
                 Log.i(TAG, "File removed: ${imagePath}")
-            } catch (fe: Exception) {
-                Log.d(TAG, fe.toString())
+            } catch (fileException: Exception) {
+                Log.d(TAG, fileException.toString())
             }
 
             Log.i(TAG, outputContent)
@@ -154,6 +165,7 @@ class MyAccessibilityService : AccessibilityService() {
             speakToUser(outputContent)
 
         } catch (e: Exception) {
+            speakToUser(appStrings[appLanguage]?.get("something_went_wrong").toString())
             Log.e(TAG, e.localizedMessage)
         }
     }
@@ -216,7 +228,8 @@ class MyAccessibilityService : AccessibilityService() {
         generativeModel = GenerativeModel(
             modelName = generativeModelName,
             apiKey = apiKey,
-            generationConfig = generativeModelConfig
+            generationConfig = generativeModelConfig,
+            safetySettings = safetySettings
         )
 
         // Set-up TTS
