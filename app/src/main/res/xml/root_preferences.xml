@@ -1,34 +1,35 @@
 <PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto">
 
-    <PreferenceCategory app:title="@string/messages_header">
-
+    <PreferenceCategory app:title="@string/pref_head_gemini">
         <EditTextPreference
-            app:key="signature"
-            app:title="@string/signature_title"
-            app:useSimpleSummaryProvider="true" />
-
-        <ListPreference
-            app:defaultValue="reply"
-            app:entries="@array/reply_entries"
-            app:entryValues="@array/reply_values"
-            app:key="reply"
-            app:title="@string/reply_title"
+            app:defaultValue=""
+            app:key="pref_gemini_api_key"
+            app:title="@string/pref_gemini_api_key"
             app:useSimpleSummaryProvider="true" />
 
     </PreferenceCategory>
 
-    <PreferenceCategory app:title="@string/sync_header">
+    <PreferenceCategory app:title="@string/pref_head_orion">
+        <ListPreference
+            app:defaultValue="EN"
+            app:entries="@array/languages_entries"
+            app:entryValues="@array/languages_values"
+            app:key="pref_orion_language"
+            app:title="@string/pref_orion_language"
+            app:useSimpleSummaryProvider="true" />
+
+        <ListPreference
+            app:defaultValue="1.0"
+            app:entries="@array/speed_entries"
+            app:entryValues="@array/speed_values"
+            app:key="pref_orion_tts_speed"
+            app:title="@string/pref_orion_tts_speed"
+            app:useSimpleSummaryProvider="true" />
 
         <SwitchPreferenceCompat
-            app:key="sync"
-            app:title="@string/sync_title" />
-
-        <SwitchPreferenceCompat
-            app:dependency="sync"
-            app:key="attachment"
-            app:summaryOff="@string/attachment_summary_off"
-            app:summaryOn="@string/attachment_summary_on"
-            app:title="@string/attachment_title" />
+            app:defaultValue="false"
+            app:key="pref_orion_auto_confirm"
+            app:title="@string/pref_orion_auto_confirm" />
 
     </PreferenceCategory>
 

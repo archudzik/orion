@@ -1,17 +1,23 @@
 package com.deltainteraction.orion
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.GestureDescription
+import android.accessibilityservice.GestureDescription.StrokeDescription
 import android.app.Activity
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.res.Resources
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.VibrationEffect
 import android.os.VibratorManager
+import android.speech.tts.TextToSpeech
+import android.speech.tts.Voice
 import android.util.Log
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -20,11 +26,13 @@ import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.widget.Button
 import android.widget.FrameLayout
+import androidx.preference.PreferenceManager
 import com.google.ai.client.generativeai.GenerativeModel
 import com.google.ai.client.generativeai.type.content
 import com.google.ai.client.generativeai.type.generationConfig
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 
 class MyAccessibilityService : AccessibilityService() {
@@ -33,17 +41,34 @@ class MyAccessibilityService : AccessibilityService() {
     private var mLayout: FrameLayout? = null
     private var actionBarScreenButton: Button? = null
 
+    var apiKey = BuildConfig.GEMINI_API_KEY
     var generativeModel: GenerativeModel? = null
     val generativeModelName = "gemini-1.5-flash-latest"
     val generativeModelConfig = generationConfig {
         temperature = 0.7f
     }
 
-    var apiKey = BuildConfig.GEMINI_API_KEY
-    var promptLanguage = "PL"
-    val prompt = mapOf(
-        "PL" to "Jesteś asystentem AI, który pomaga osobie niewidomej. Twoje zadanie polega na odczytaniu zawartości ekranu, ekstrakcję kluczowych informacji, i poinformowania tej osoby o tym, co dzieje się na ekranie. Po Twojej analizie, aplikacja odczyta ją na głos. Bądź zwięzły. Zacznij od: 'Ekran pokazuje...'"
+    private var appLanguage = "PL"
+    private val appStrings = mapOf(
+        "PL" to mapOf(
+            "tts_voice" to "pol_POL_default",
+            "prompt_read" to "Jesteś asystentem AI, który pomaga osobie niewidomej. Twoje zadanie polega na odczytaniu zawartości ekranu, ekstrakcję kluczowych informacji, i poinformowania tej osoby o tym, co dzieje się na ekranie. Po Twojej analizie, aplikacja odczyta ją na głos. Bądź zwięzły. Zacznij od: 'Ekran pokazuje...'",
+            "read_screen" to "Odczyt\nEkranu",
+            "processing" to "Odczytuję..."
+        ),
+        "EN" to mapOf(
+            "tts_voice" to "eng_GBR_default",
+            "prompt_read" to "You are an AI assistant helping a blind person. Your task is to read the screen's content, extract key information, and inform the person about what is happening on the screen. After your analysis, the application will read it out loud. Be concise. Start with: 'The screen shows...'",
+            "read_screen" to "Read\nScreen",
+            "processing" to "Reading..."
+        )
     )
+
+    // TTS Service
+    lateinit var textToSpeech: TextToSpeech
+
+    // Touch events
+    var autoConfirmRecording: Boolean = false
 
     // BroadcastReceiver to handle the screen capture permission result and screenshot path
     private val genericBroadcastReceiver: BroadcastReceiver = object : BroadcastReceiver() {
@@ -82,11 +107,25 @@ class MyAccessibilityService : AccessibilityService() {
         }
     }
 
+    private fun speakToUser(outputContent: String) {
+        if (textToSpeech != null) {
+            Log.i(TAG, "Speaking...")
+            if (textToSpeech.isSpeaking) {
+                textToSpeech.stop()
+            }
+            textToSpeech.speak(outputContent, TextToSpeech.QUEUE_FLUSH, null, TAG)
+        } else {
+            Log.i(TAG, "TTS not started.")
+        }
+    }
+
     suspend fun chatWithGemini(imagePath: String) {
         try {
+            appStrings[appLanguage]?.get("processing")?.let { speakToUser(it) }
+
             val inputContent = content {
                 image(BitmapFactory.decodeFile(imagePath))
-                text(prompt[promptLanguage].toString())
+                text(appStrings[appLanguage]?.get("prompt_read").toString())
             }
 
             var outputContent = ""
@@ -96,6 +135,7 @@ class MyAccessibilityService : AccessibilityService() {
             }
 
             Log.i(TAG, outputContent)
+            speakToUser(outputContent)
 
         } catch (e: Exception) {
             Log.e(TAG, e.localizedMessage)
@@ -103,6 +143,23 @@ class MyAccessibilityService : AccessibilityService() {
     }
 
     override fun onServiceConnected() {
+        // Set up language and settings
+        val preferences = PreferenceManager.getDefaultSharedPreferences(this)
+        val newLang = preferences.getString("pref_orion_language", "en").toString()
+        val newApiKey = preferences.getString("pref_gemini_api_key", "").toString()
+        val newAutoConfirm = preferences.getBoolean("pref_orion_auto_confirm", false)
+        val newTtsSpeed = preferences.getString("pref_orion_tts_speed", "1.0")!!.toFloat()
+
+        if (newLang.isNotEmpty()) {
+            appLanguage = newLang
+        }
+
+        if (newApiKey.isNotEmpty()) {
+            apiKey = newApiKey
+        }
+
+        autoConfirmRecording = newAutoConfirm
+
         // Set up the overlay UI
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
         mLayout = FrameLayout(this)
@@ -143,6 +200,28 @@ class MyAccessibilityService : AccessibilityService() {
             generationConfig = generativeModelConfig
         )
 
+        // Set-up TTS
+        textToSpeech = TextToSpeech(this) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                textToSpeech.language = Locale.forLanguageTag(appLanguage)
+
+                val desiredVoice = appStrings[appLanguage]?.get("tts_voice").toString()
+                val voices: Set<Voice> = textToSpeech.getVoices()
+                val voiceList: List<Voice> = ArrayList(voices)
+
+                for (voice in voiceList) {
+                    if (voice.locale.toString().equals(desiredVoice)) {
+                        textToSpeech.setVoice(voice)
+                        textToSpeech.setSpeechRate(newTtsSpeed)
+                    }
+                }
+
+                Log.d(TAG, "TextToSpeech Initialization Success")
+            } else {
+                Log.d(TAG, "TextToSpeech Initialization Failed")
+            }
+        }
+
         // Bind onClickListener to the button (once layout is inflated)
         actionBarScreenButton = mLayout?.findViewById(R.id.action_bar_button_screen)
         // Create gradient drawable programmatically
@@ -156,7 +235,7 @@ class MyAccessibilityService : AccessibilityService() {
         actionBarScreenButton?.apply {
             background = gradient
             alpha = 0.9f  // Opacity level between 0.0 and 1.0
-            text = "Read\nScreen"
+            text = appStrings[appLanguage]?.get("read_screen")
             textSize = 20f
         }
 
@@ -180,14 +259,55 @@ class MyAccessibilityService : AccessibilityService() {
         Log.d(TAG, "Requesting screen capture permission...")
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        unregisterReceiver(genericBroadcastReceiver) // Unregister the receiver when the service is destroyed
-        Log.d(TAG, "MyAccessibilityService destroyed.")
+    private fun touchTo(x: Float, y: Float) {
+        val swipePath: Path = Path()
+        swipePath.moveTo(x, y)
+        swipePath.lineTo(x, y)
+        val gestureBuilder = GestureDescription.Builder()
+        gestureBuilder.addStroke(StrokeDescription(swipePath, 0, 50))
+        dispatchGesture(gestureBuilder.build(), null, null)
+    }
+
+    private fun getScreenWidth(): Int {
+        return Resources.getSystem().displayMetrics.widthPixels
+    }
+
+    private fun getScreenHeight(): Int {
+        return Resources.getSystem().displayMetrics.heightPixels
+    }
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        Log.i(TAG, event.toString())
+        var source = event!!.source
+        if (event != null && source != null && event!!.eventType === AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            if (source.getPackageName().equals("com.android.systemui")) {
+                val confirm =
+                    getRootInActiveWindow()
+                        .findAccessibilityNodeInfosByText("casting with Orion?")
+                Log.i(TAG, confirm.toString())
+                if (confirm.size !== 0) {
+                    val x = (getScreenWidth() - 200).toFloat()
+                    val y = (getScreenHeight() - 120).toFloat()
+                    Log.i(TAG, "X:${x}, Y:${y}")
+                    if (autoConfirmRecording) {
+                        touchTo(x, y)
+                    }
+                }
+            }
+        }
     }
 
     override fun onInterrupt() {}
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+    override fun onDestroy() {
+        super.onDestroy()
+        unregisterReceiver(genericBroadcastReceiver) // Unregister the receiver when the service is destroyed
+        Log.d(TAG, "MyAccessibilityService destroyed.")
+        if (textToSpeech != null) {
+            textToSpeech.shutdown()
+        }
+
+    }
+
 }
 

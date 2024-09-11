@@ -19,10 +19,13 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         tools:targetApi="31">
+
         <activity
             android:name=".SettingsActivity"
             android:exported="true"
-            android:label="@string/title_activity_settings" />
+            android:label="@string/title_activity_settings"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar"
+            />
 
         <activity
             android:name=".ScreenCaptureActivity"
