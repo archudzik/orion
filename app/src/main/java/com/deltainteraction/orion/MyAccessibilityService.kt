@@ -36,7 +36,6 @@ import com.google.ai.client.generativeai.type.generationConfig
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import java.io.File
-import java.nio.file.attribute.AclEntry.newBuilder
 import java.util.Arrays
 import java.util.Locale
 
@@ -121,13 +120,17 @@ class MyAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun speakToUser(outputContent: String) {
+    private fun speakToUser(outputContent: String, stopSpeakingFirst: Boolean) {
         if (textToSpeech != null) {
             Log.i(TAG, "Speaking...")
-            if (textToSpeech.isSpeaking) {
-                textToSpeech.stop()
+            if (stopSpeakingFirst) {
+                if (textToSpeech.isSpeaking) {
+                    textToSpeech.stop()
+                }
+                textToSpeech.speak(outputContent, TextToSpeech.QUEUE_FLUSH, null, TAG)
+            } else {
+                textToSpeech.speak(outputContent, TextToSpeech.QUEUE_ADD, null, TAG)
             }
-            textToSpeech.speak(outputContent, TextToSpeech.QUEUE_FLUSH, null, TAG)
         } else {
             Log.i(TAG, "TTS not started.")
         }
@@ -135,7 +138,7 @@ class MyAccessibilityService : AccessibilityService() {
 
     suspend fun chatWithGemini(imagePath: String) {
         try {
-            appStrings[appLanguage]?.get("processing")?.let { speakToUser(it) }
+            appStrings[appLanguage]?.get("processing")?.let { speakToUser(it, true) }
 
             vibrate(VibrationEffect.EFFECT_TICK)
 
@@ -162,10 +165,10 @@ class MyAccessibilityService : AccessibilityService() {
 
             Log.i(TAG, outputContent)
             vibrate(VibrationEffect.EFFECT_HEAVY_CLICK)
-            speakToUser(outputContent)
+            speakToUser(outputContent, true)
 
         } catch (e: Exception) {
-            speakToUser(appStrings[appLanguage]?.get("something_went_wrong").toString())
+            speakToUser(appStrings[appLanguage]?.get("something_went_wrong").toString(), true)
             Log.e(TAG, e.localizedMessage)
         }
     }
@@ -176,7 +179,7 @@ class MyAccessibilityService : AccessibilityService() {
 
         // Set up language and settings
         val preferences = PreferenceManager.getDefaultSharedPreferences(this)
-        val newLang = preferences.getString("pref_orion_language", "en").toString()
+        val newLang = preferences.getString("pref_orion_language", "EN").toString()
         val newApiKey = preferences.getString("pref_gemini_api_key", "").toString()
         val newAutoConfirm = preferences.getBoolean("pref_orion_auto_confirm", false)
         val newTtsSpeed = preferences.getString("pref_orion_tts_speed", "1.0")!!.toFloat()
