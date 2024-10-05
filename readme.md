@@ -1,8 +1,8 @@
 
-# Project Orion
+# Project Orion - AI-driven Screen Reader for Android
 ### Open-Source Screen Reader using Gemini AI
 
-Orion is a screen reader designed to make Android devices more accessible by using Gemini AI. It works as an accessibility service, letting users convert on-screen content into spoken words easily. With a floating button called **Read Screen**, Orion allows users to hear information on their screens with just a tap.
+Orion is a screen reader designed to make Android devices more accessible by using Gemini AI. It works as an accessibility service, letting users convert on-screen content into spoken words. With a floating button called **Read Screen**, Orion allows users to hear information on their screens with just a tap.
 
 ![Orion in Action](OrionGIF1.gif)
 
@@ -10,7 +10,7 @@ Orion is a screen reader designed to make Android devices more accessible by usi
 - **Accessibility Service Integration**: Works as an accessibility service to provide screen reading capabilities.
 - **Hover Button**: A floating button labeled **Read Screen** for easy access.
 - **AI-Powered**: Captures a snapshot of the current screen, sends it to Gemini AI, and reads the result aloud.
-- **Custom Configuration**: Easily configure settings by visiting a specific website to get an API token.
+- **Custom Configuration**: Easily configure your private settings by visiting a specific website to get an API token.
 
 
 ## Addressing Accessibility
