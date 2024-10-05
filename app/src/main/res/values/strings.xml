@@ -6,7 +6,7 @@
     <string name="title_activity_screen_capture">Screen Capture</string>
     <string name="action_bar_screen">Read Screen</string>
     <string name="pref_head_gemini">Gemini AI</string>
-    <string name="pref_gemini_api_key">API Key</string>
+    <string name="pref_gemini_api_key">API Key (aistudio.google.com/app/apikey)</string>
     <string name="pref_head_orion">Orion Preferences</string>
     <string name="pref_orion_language">Language</string>
     <string name="pref_orion_auto_confirm">Auto Confirm Recording</string>
